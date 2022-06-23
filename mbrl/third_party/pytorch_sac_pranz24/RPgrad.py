@@ -79,6 +79,7 @@ class BPTT(object):
         self, memory, batch_size, updates, logger=None, reverse_mask=False, mf_update=False,
             rollout_horizon=1, model_env=None,
     ):
+        batch = memory.sample(batch_size)
         # Sample a batch from memory
         (
             state_batch,
@@ -86,7 +87,7 @@ class BPTT(object):
             next_state_batch,
             reward_batch,
             mask_batch,
-        ) = memory.sample(batch_size).astuple()
+        ) = batch.astuple()
 
         state_batch = torch.FloatTensor(state_batch).to(self.device)
         next_state_batch = torch.FloatTensor(next_state_batch).to(self.device)
@@ -122,37 +123,38 @@ class BPTT(object):
         self.critic_optim.zero_grad()
         qf_loss.backward()
         self.critic_optim.step()
-
+        pi, log_pi, _ = self.policy.sample(state_batch)
         if mf_update:
-            pi, log_pi, _ = self.policy.sample(state_batch)
-
             qf1_pi, qf2_pi = self.critic(state_batch, pi)
             min_qf_pi = torch.min(qf1_pi, qf2_pi)
             policy_loss = (
                 (self.alpha * log_pi) - min_qf_pi
             ).mean()  # Jπ = 𝔼st∼D,εt∼N[α * logπ(f(εt;st)|st) − Q(st,f(εt;st))]
         else:
-            state_batch, *_ = cast(mbrl.types.TransitionBatch, state_batch).astuple()
+            obs_batch, *_ = cast(mbrl.types.TransitionBatch, batch).astuple()
             model_state = model_env.reset(
-                initial_obs_batch=cast(np.ndarray, state_batch),
+                initial_obs_batch=cast(np.ndarray, obs_batch),
                 return_as_np=True,
             )
-            accum_dones = np.zeros(state_batch.shape[0], dtype=bool)
+            accum_dones = torch.zeros(obs_batch.shape[0], dtype=bool)
+            accum_dones = accum_dones.to(self.device)
             for i in range(rollout_horizon):
-                action, _, _ = self.policy.sample(state_batch)
+                obs_batch = torch.FloatTensor(obs_batch)
+                obs_batch = obs_batch.to(self.device)
+                action, _, _ = self.policy.sample(obs_batch)
                 pred_next_obs, pred_rewards, pred_dones, model_state = model_env.step(
                     action, model_state, sample=True, no_grad=False
                 )
                 if i == 0:
-                    cum_rew = pred_rewards * (1. - pred_dones)
+                    cum_rew = pred_rewards * (~pred_dones)
                 elif i < rollout_horizon - 1:
-                    cum_rew += self.gamma ** i * pred_rewards * (1. - pred_dones)
+                    cum_rew += self.gamma ** i * pred_rewards * (~pred_dones)
                 else:
                     pi, log_pi, _ = self.policy.sample(pred_next_obs)
                     qf1_pi, qf2_pi = self.critic(pred_next_obs, pi)
                     min_qf_pi = torch.min(qf1_pi, qf2_pi)
-                    cum_rew += self.gamma ** i * min_qf_pi * (1. - pred_dones)
-                state_batch = pred_next_obs
+                    cum_rew += self.gamma ** i * min_qf_pi * (~pred_dones)
+                obs_batch = pred_next_obs
                 accum_dones |= pred_dones.squeeze()
             policy_loss = -(cum_rew/rollout_horizon).mean()
 
