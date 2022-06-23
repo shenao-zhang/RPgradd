@@ -88,7 +88,7 @@ class ModelEnv:
         self,
         actions: mbrl.types.TensorType,
         model_state: Dict[str, torch.Tensor],
-        sample: bool = False,
+        sample: bool = False, no_grad: bool = True,
     ) -> Tuple[mbrl.types.TensorType, mbrl.types.TensorType, np.ndarray, Dict]:
         """Steps the model environment with the given batch of actions.
 
@@ -100,13 +100,47 @@ class ModelEnv:
                 converted to a torch.Tensor and sent to the model device.
             model_state (dict(str, tensor)): the model state as returned by :meth:`reset()`.
             sample (bool): if ``True`` model predictions are stochastic. Defaults to ``False``.
+            no_grad (bool): enable gradient bp in BPTT.
 
         Returns:
             (tuple): contains the predicted next observation, reward, done flag and metadata.
             The done flag is computed using the termination_fn passed in the constructor.
         """
         assert len(actions.shape) == 2  # batch, action_dim
-        with torch.no_grad():
+        if no_grad:
+            with torch.no_grad():
+                # if actions is tensor, code assumes it's already on self.device
+                if isinstance(actions, np.ndarray):
+                    actions = torch.from_numpy(actions).to(self.device)
+                (
+                    next_observs,
+                    pred_rewards,
+                    pred_terminals,
+                    next_model_state,
+                ) = self.dynamics_model.sample(
+                    actions,
+                    model_state,
+                    deterministic=not sample,
+                    rng=self._rng,
+                )
+                rewards = (
+                    pred_rewards
+                    if self.reward_fn is None
+                    else self.reward_fn(actions, next_observs)
+                )
+                dones = self.termination_fn(actions, next_observs)
+
+                if pred_terminals is not None:
+                    raise NotImplementedError(
+                        "ModelEnv doesn't yet support simulating terminal indicators."
+                    )
+
+                if self._return_as_np:
+                    next_observs = next_observs.cpu().numpy()
+                    rewards = rewards.cpu().numpy()
+                    dones = dones.cpu().numpy()
+                return next_observs, rewards, dones, next_model_state
+        else:
             # if actions is tensor, code assumes it's already on self.device
             if isinstance(actions, np.ndarray):
                 actions = torch.from_numpy(actions).to(self.device)
@@ -132,11 +166,12 @@ class ModelEnv:
                 raise NotImplementedError(
                     "ModelEnv doesn't yet support simulating terminal indicators."
                 )
-
+            """
             if self._return_as_np:
                 next_observs = next_observs.cpu().numpy()
                 rewards = rewards.cpu().numpy()
                 dones = dones.cpu().numpy()
+            """
             return next_observs, rewards, dones, next_model_state
 
     def render(self, mode="human"):

@@ -4,6 +4,7 @@ import torch
 import torch.nn.functional as F
 from torch.optim import Adam
 from typing import Optional, Sequence, cast
+import mbrl.types
 
 from mbrl.third_party.pytorch_sac_pranz24.model import (
     DeterministicPolicy,
@@ -131,6 +132,7 @@ class BPTT(object):
                 (self.alpha * log_pi) - min_qf_pi
             ).mean()  # Jπ = 𝔼st∼D,εt∼N[α * logπ(f(εt;st)|st) − Q(st,f(εt;st))]
         else:
+            state_batch, *_ = cast(mbrl.types.TransitionBatch, state_batch).astuple()
             model_state = model_env.reset(
                 initial_obs_batch=cast(np.ndarray, state_batch),
                 return_as_np=True,
@@ -139,7 +141,7 @@ class BPTT(object):
             for i in range(rollout_horizon):
                 action, _, _ = self.policy.sample(state_batch)
                 pred_next_obs, pred_rewards, pred_dones, model_state = model_env.step(
-                    action, model_state, sample=True
+                    action, model_state, sample=True, no_grad=False
                 )
                 if i == 0:
                     cum_rew = pred_rewards * (1. - pred_dones)

@@ -185,7 +185,8 @@ def train(
     epoch = 0
     sac_buffer = None
     while env_steps < cfg.overrides.num_steps:
-        mf_update = env_steps <= cfg.overrides.num_steps / 15
+      #  mf_update = env_steps <= cfg.overrides.num_steps / 15
+        mf_update = False
         rollout_length = int(
             mbrl.util.math.truncated_linear(
                 *(cfg.overrides.rollout_schedule + [epoch + 1])
