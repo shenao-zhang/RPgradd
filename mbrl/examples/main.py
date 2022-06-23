@@ -27,7 +27,8 @@ def run(cfg: omegaconf.DictConfig):
     if cfg.algorithm.name == "planet":
         return planet.train(env, cfg)
     if cfg.algorithm.name == "bptt":
-        return bptt.train(env, cfg)
+        test_env, *_ = mbrl.util.env.EnvHandler.make_env(cfg)
+        return bptt.train(env, test_env, term_fn, cfg)
 
 
 if __name__ == "__main__":
