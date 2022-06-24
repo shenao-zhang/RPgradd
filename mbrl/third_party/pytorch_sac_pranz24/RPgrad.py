@@ -14,6 +14,22 @@ from mbrl.third_party.pytorch_sac_pranz24.model import (
 from mbrl.third_party.pytorch_sac_pranz24.utils import hard_update, soft_update
 
 
+class eval_mode(object):
+    def __init__(self, *models):
+        self.models = models
+
+    def __enter__(self):
+        self.prev_states = []
+        for model in self.models:
+            self.prev_states.append(model.training)
+            model.train(False)
+
+    def __exit__(self, *args):
+        for model, state in zip(self.models, self.prev_states):
+            model.train(state)
+        return False
+
+
 class BPTT(object):
     def __init__(self, num_inputs, action_space, args):
         self.args = args
@@ -138,29 +154,29 @@ class BPTT(object):
             )
             accum_dones = torch.zeros(obs_batch.shape[0], dtype=bool)
             accum_dones = accum_dones.to(self.device)
+            rollout_horizon = 4
             for i in range(rollout_horizon):
                 if self.device == "cpu":
                     obs_batch = torch.FloatTensor(obs_batch)
                 else:
                     obs_batch = torch.cuda.FloatTensor(obs_batch)
-              #  obs_batch = obs_batch.to(self.device)
-                action, _, _ = self.policy.sample(obs_batch)
+                action, log_action, _ = self.policy.sample(obs_batch)
                 pred_next_obs, pred_rewards, pred_dones, model_state = model_env.step(
                     action, model_state, sample=True, no_grad=False
                 )
                 if i == 0:
-                    cum_rew = pred_rewards * (~pred_dones)
+                    cum_rew = pred_rewards * (~accum_dones) - self.alpha * log_action
                 elif i < rollout_horizon - 1:
-                    cum_rew += self.gamma ** i * pred_rewards * (~pred_dones)
+                    cum_rew += self.gamma ** i * (pred_rewards * (~accum_dones) - self.alpha * log_action)
                 if i == rollout_horizon - 1:
                     pi, _, _ = self.policy.sample(pred_next_obs)
+            #        with eval_mode(self.critic):
                     qf1_pi, qf2_pi = self.critic(pred_next_obs, pi)
                     min_qf_pi = torch.min(qf1_pi, qf2_pi)
-                    cum_rew += self.gamma ** rollout_horizon * min_qf_pi * (~pred_dones)
+                    cum_rew += self.gamma ** rollout_horizon * (min_qf_pi * (~accum_dones) - self.alpha * log_action)
                 obs_batch = pred_next_obs
                 accum_dones |= pred_dones.squeeze()
             policy_loss = -(cum_rew/rollout_horizon).mean()
-
         self.policy_optim.zero_grad()
         policy_loss.backward()
         self.policy_optim.step()

@@ -141,9 +141,6 @@ class ModelEnv:
                     dones = dones.cpu().numpy()
                 return next_observs, rewards, dones, next_model_state
         else:
-            # if actions is tensor, code assumes it's already on self.device
-            if isinstance(actions, np.ndarray):
-                actions = torch.from_numpy(actions).to(self.device)
             (
                 next_observs,
                 pred_rewards,
@@ -161,17 +158,6 @@ class ModelEnv:
                 else self.reward_fn(actions, next_observs)
             )
             dones = self.termination_fn(actions, next_observs)
-
-            if pred_terminals is not None:
-                raise NotImplementedError(
-                    "ModelEnv doesn't yet support simulating terminal indicators."
-                )
-            """
-            if self._return_as_np:
-                next_observs = next_observs.cpu().numpy()
-                rewards = rewards.cpu().numpy()
-                dones = dones.cpu().numpy()
-            """
             return next_observs, rewards, dones, next_model_state
 
     def render(self, mode="human"):
