@@ -139,8 +139,11 @@ class BPTT(object):
             accum_dones = torch.zeros(obs_batch.shape[0], dtype=bool)
             accum_dones = accum_dones.to(self.device)
             for i in range(rollout_horizon):
-                obs_batch = torch.FloatTensor(obs_batch)
-                obs_batch = obs_batch.to(self.device)
+                if self.device == "cpu":
+                    obs_batch = torch.FloatTensor(obs_batch)
+                else:
+                    obs_batch = torch.cuda.FloatTensor(obs_batch)
+              #  obs_batch = obs_batch.to(self.device)
                 action, _, _ = self.policy.sample(obs_batch)
                 pred_next_obs, pred_rewards, pred_dones, model_state = model_env.step(
                     action, model_state, sample=True, no_grad=False
@@ -149,11 +152,11 @@ class BPTT(object):
                     cum_rew = pred_rewards * (~pred_dones)
                 elif i < rollout_horizon - 1:
                     cum_rew += self.gamma ** i * pred_rewards * (~pred_dones)
-                else:
-                    pi, log_pi, _ = self.policy.sample(pred_next_obs)
+                if i == rollout_horizon - 1:
+                    pi, _, _ = self.policy.sample(pred_next_obs)
                     qf1_pi, qf2_pi = self.critic(pred_next_obs, pi)
                     min_qf_pi = torch.min(qf1_pi, qf2_pi)
-                    cum_rew += self.gamma ** i * min_qf_pi * (~pred_dones)
+                    cum_rew += self.gamma ** rollout_horizon * min_qf_pi * (~pred_dones)
                 obs_batch = pred_next_obs
                 accum_dones |= pred_dones.squeeze()
             policy_loss = -(cum_rew/rollout_horizon).mean()
