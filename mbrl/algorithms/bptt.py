@@ -217,20 +217,20 @@ def train(
 
                 # --------- Rollout new model and store imagined trajectories --------
                 # Batch all rollouts for the next freq_train_model steps together
-                rollout_model_and_populate_sac_buffer(
-                    model_env,
-                    replay_buffer,
-                    agent,
-                    sac_buffer,
-                    cfg.algorithm.sac_samples_action,
-                    rollout_length,
-                    rollout_batch_size,
-                )
+                if cfg.algorithm.real_data_ratio < 1.0:
+                    rollout_model_and_populate_sac_buffer(
+                        model_env,
+                        replay_buffer,
+                        agent,
+                        sac_buffer,
+                        cfg.algorithm.sac_samples_action,
+                        rollout_length,
+                        rollout_batch_size,
+                    )
 
                 if debug_mode:
                     print(
                         f"Epoch: {epoch}. "
-                        f"SAC buffer size: {len(sac_buffer)}. "
                         f"Rollout length: {rollout_length}. "
                         f"Steps: {env_steps}"
                     )
