@@ -164,6 +164,18 @@ class BPTT(object):
                 pred_next_obs, pred_rewards, pred_dones, model_state = model_env.step(
                     action, model_state, sample=True, no_grad=False
                 )
+                """
+                if i == 0:
+                    cum_rew = pred_rewards * (~accum_dones)
+                elif i < rollout_horizon - 1:
+                    cum_rew += self.gamma ** i * (pred_rewards * (~accum_dones))
+                if i == rollout_horizon - 1:
+                    pi, log_pi, _ = self.policy.sample(pred_next_obs)
+                    #        with eval_mode(self.critic):
+                    qf1_pi, qf2_pi = self.critic(pred_next_obs, pi)
+                    min_qf_pi = torch.min(qf1_pi, qf2_pi)
+                    cum_rew += self.gamma ** rollout_horizon * (min_qf_pi * (~accum_dones))
+                """
                 if i == 0:
                     cum_rew = pred_rewards * (~accum_dones) - self.alpha * log_action
                 elif i < rollout_horizon - 1:
