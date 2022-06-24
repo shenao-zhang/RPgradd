@@ -169,11 +169,11 @@ class BPTT(object):
                 elif i < rollout_horizon - 1:
                     cum_rew += self.gamma ** i * (pred_rewards * (~accum_dones) - self.alpha * log_action)
                 if i == rollout_horizon - 1:
-                    pi, _, _ = self.policy.sample(pred_next_obs)
+                    pi, log_pi, _ = self.policy.sample(pred_next_obs)
             #        with eval_mode(self.critic):
                     qf1_pi, qf2_pi = self.critic(pred_next_obs, pi)
                     min_qf_pi = torch.min(qf1_pi, qf2_pi)
-                    cum_rew += self.gamma ** rollout_horizon * (min_qf_pi * (~accum_dones) - self.alpha * log_action)
+                    cum_rew += self.gamma ** rollout_horizon * (min_qf_pi * (~accum_dones) - self.alpha * log_pi)
                 obs_batch = pred_next_obs
                 accum_dones |= pred_dones.squeeze()
             policy_loss = -(cum_rew/rollout_horizon).mean()
