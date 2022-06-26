@@ -1,3 +1,4 @@
 from .replay_memory import ReplayMemory
 from .sac import SAC
-from .RPgrad import BPTT
+from .BPTT_update import BPTT
+from .SVG_update import SVG

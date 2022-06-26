@@ -1,5 +1,5 @@
 # @package _group_
-name: "bptt"
+name: "svg"
 
 normalize: true
 normalize_double_precision: true
@@ -7,7 +7,7 @@ target_is_delta: true
 learned_rewards: true
 freq_train_model: ${overrides.freq_train_model}
 real_data_ratio: 1  # 0.8
-mf_ratio: 0.1
+mf_ratio: 0.0
 
 sac_samples_action: true
 initial_exploration_steps: 5000
@@ -18,7 +18,7 @@ num_eval_episodes: 1
 #          SAC Agent configuration
 # --------------------------------------------
 agent:
-  _target_: mbrl.third_party.pytorch_sac_pranz24.BPTT_update.BPTT
+  _target_: mbrl.third_party.pytorch_sac_pranz24.SVG_update.SVG
   num_inputs: ???
   action_space:
     _target_: gym.env.Box

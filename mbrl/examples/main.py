@@ -11,6 +11,7 @@ import mbrl.algorithms.mbpo as mbpo
 import mbrl.algorithms.pets as pets
 import mbrl.algorithms.planet as planet
 import mbrl.algorithms.bptt as bptt
+import mbrl.algorithms.svg as svg
 import mbrl.util.env
 
 
@@ -29,7 +30,11 @@ def run(cfg: omegaconf.DictConfig):
     if cfg.algorithm.name == "bptt":
         test_env, *_ = mbrl.util.env.EnvHandler.make_env(cfg)
         return bptt.train(env, test_env, term_fn, cfg)
-
+    if cfg.algorithm.name == "svg":
+        test_env, *_ = mbrl.util.env.EnvHandler.make_env(cfg)
+        return svg.train(env, test_env, term_fn, cfg)
+    else:
+        raise NotImplementedError
 
 if __name__ == "__main__":
     run()

@@ -1,5 +1,7 @@
 import numpy as np
+import numpy.random as npr
 import torch
+from sortedcontainers import SortedSet
 
 
 class ReplayBuffer(object):
@@ -20,6 +22,7 @@ class ReplayBuffer(object):
         self.not_dones_no_max = np.empty((capacity, 1), dtype=np.float32)
 
         self.idx = 0
+        self.done_idxs = SortedSet()
         self.last_save = 0
         self.full = False
 
@@ -33,6 +36,10 @@ class ReplayBuffer(object):
         np.copyto(self.next_obses[self.idx], next_obs)
         np.copyto(self.not_dones[self.idx], not done)
         np.copyto(self.not_dones_no_max[self.idx], not done_no_max)
+        if done:
+            self.done_idxs.add(self.idx)
+        elif self.full:
+            self.done_idxs.discard(self.idx)
 
         self.idx = (self.idx + 1) % self.capacity
         self.full = self.full or self.idx == 0
@@ -79,3 +86,42 @@ class ReplayBuffer(object):
         )
 
         return obses, actions, rewards, next_obses, not_dones, not_dones_no_max
+
+    def sample_multistep(self, batch_size, rollout_length):
+        last_idx = self.capacity if self.full else self.idx
+        last_idx -= rollout_length
+
+        # raw here means the "coalesced" indices that map to valid
+        # indicies that are more than T steps away from a done
+        done_idxs_sorted = np.array(list(self.done_idxs) + [last_idx])
+        n_done = len(done_idxs_sorted)
+        done_idxs_raw = done_idxs_sorted - np.arange(1, n_done+1) * rollout_length
+
+        samples_raw = npr.choice(
+            last_idx-(rollout_length + 1) * n_done, size=batch_size,
+            replace=True # for speed
+        )
+        samples_raw = sorted(samples_raw)
+        js = np.searchsorted(done_idxs_raw, samples_raw)
+        offsets = done_idxs_raw[js] - samples_raw + rollout_length
+        start_idxs = done_idxs_sorted[js] - offsets
+
+        obses, actions, rewards, next_obses = [], [], [], []
+        for h in range(rollout_length):
+            obses.append(self.obses[start_idxs + h])
+            actions.append(self.actions[start_idxs + h])
+            rewards.append(self.rewards[start_idxs + h])
+            next_obses.append(self.next_obses[start_idxs + h])
+            assert np.all(self.not_dones[start_idxs + h])
+
+        obses = np.stack(obses)
+        actions = np.stack(actions)
+        #rewards = np.stack(rewards).squeeze(2)
+        rewards = np.stack(rewards)
+        next_obses = np.stack(next_obses)
+
+        obses = torch.as_tensor(obses, device=self.device).float()
+        actions = torch.as_tensor(actions, device=self.device)
+        rewards = torch.as_tensor(rewards, device=self.device)
+        next_obses = torch.as_tensor(next_obses, device=self.device).float()
+        return obses, actions, rewards, next_obses

@@ -7,7 +7,9 @@ import warnings
 from typing import Any, List, Optional, Sequence, Sized, Tuple, Type, Union
 
 import numpy as np
-
+import numpy.random as npr
+import torch
+from sortedcontainers import SortedSet
 from mbrl.types import TransitionBatch
 
 
@@ -449,6 +451,7 @@ class ReplayBuffer:
         self.action = np.empty((capacity, *action_shape), dtype=action_type)
         self.reward = np.empty(capacity, dtype=reward_type)
         self.done = np.empty(capacity, dtype=bool)
+        self.done_idxs = SortedSet()
 
         if rng is None:
             self._rng = np.random.default_rng()
@@ -536,6 +539,11 @@ class ReplayBuffer:
         self.action[self.cur_idx] = action
         self.reward[self.cur_idx] = reward
         self.done[self.cur_idx] = done
+
+        if done:
+            self.done_idxs.add(self.cur_idx)
+        elif self.cur_idx % self.capacity == 0:
+            self.done_idxs.discard(self.cur_idx)
 
         if self.trajectory_indices is not None:
             self._trajectory_bookkeeping(done)
@@ -626,6 +634,55 @@ class ReplayBuffer:
         done = self.done[indices]
 
         return TransitionBatch(obs, action, next_obs, reward, done)
+
+    def sample_multistep(self, batch_size, rollout_length):
+        last_idx = self.num_stored
+      #  last_idx = self.capacity if self.full else self.idx
+        last_idx -= rollout_length
+
+        # raw here means the "coalesced" indices that map to valid
+        # indicies that are more than T steps away from a done
+        done_idxs_sorted = np.array(list(self.done_idxs) + [last_idx])
+        n_done = len(done_idxs_sorted)
+        done_idxs_raw = done_idxs_sorted - np.arange(1, n_done+1) * rollout_length
+
+        samples_raw = npr.choice(
+            last_idx-(rollout_length + 1) * n_done, size=batch_size,
+            replace=True  # for speed
+        )
+        samples_raw = sorted(samples_raw)
+        js = np.searchsorted(done_idxs_raw, samples_raw)
+        offsets = done_idxs_raw[js] - samples_raw + rollout_length
+        start_idxs = done_idxs_sorted[js] - offsets
+        """
+        obs = self.obs[start_idxs, start_idxs + rollout_length]
+        next_obs = self.next_obs[start_idxs, start_idxs + rollout_length]
+        action = self.action[start_idxs, start_idxs + rollout_length]
+        reward = self.reward[start_idxs, start_idxs + rollout_length]
+        done = self.done[start_idxs, start_idxs + rollout_length]
+        return TransitionBatch(obs, action, next_obs, reward, done)
+        """
+
+        obses, actions, rewards, next_obses = [], [], [], []
+        for h in range(rollout_length):
+            obses.append(self.obs[start_idxs + h])
+            next_obses.append(self.next_obs[start_idxs + h])
+            actions.append(self.action[start_idxs + h])
+            rewards.append(self.reward[start_idxs + h])
+            assert not np.all(self.done[start_idxs + h])
+
+        obses = np.stack(obses)
+        actions = np.stack(actions)
+        #rewards = np.stack(rewards).squeeze(2)
+        rewards = np.stack(rewards)
+        next_obses = np.stack(next_obses)
+        """
+        obses = torch.as_tensor(obses, device=self.device).float()
+        actions = torch.as_tensor(actions, device=self.device)
+        rewards = torch.as_tensor(rewards, device=self.device)
+        next_obses = torch.as_tensor(next_obses, device=self.device).float()
+        """
+        return obses, actions, next_obses, rewards
 
     def __len__(self):
         return self.num_stored
