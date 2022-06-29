@@ -150,6 +150,7 @@ class SVG(object):
                 (self.alpha * log_pi) - min_qf_pi
             ).mean()  # Jπ = 𝔼st∼D,εt∼N[α * logπ(f(εt;st)|st) − Q(st,f(εt;st))]
         else:
+            torch.autograd.set_detect_anomaly(True)
             dyn_r_model = model_env.dynamics_model
             multi_state_batch, multi_action_batch, multi_next_state_batch, multi_reward_batch \
                 = memory.sample_multistep(batch_size, rollout_horizon)
@@ -157,15 +158,14 @@ class SVG(object):
             multi_next_state_batch = torch.FloatTensor(multi_next_state_batch).to(self.device)
             multi_action_batch = torch.FloatTensor(multi_action_batch).to(self.device)
             multi_reward_batch = torch.FloatTensor(multi_reward_batch).to(self.device).unsqueeze(-1)
-            re_state = multi_state_batch[0]
+            re_state = multi_state_batch[0].detach()
             for i in range(rollout_horizon):
-                action_batch_i = multi_action_batch[i]
-                next_s_batch_i = multi_next_state_batch[i]
-                reward_batch_i = multi_reward_batch[i]
+                action_batch_i = multi_action_batch[i].detach()
+                next_s_batch_i = multi_next_state_batch[i].detach()
+                reward_batch_i = multi_reward_batch[i].detach()
                 # infer policy noise
                 action_mean, action_log_std = self.policy(re_state)
                 action_std = action_log_std.exp()
-            #    print(action_log_std.shape, action_mean.shape, multi_action_batch.shape)
                 with torch.no_grad():
                     varsigma = (torch.arctanh((action_batch_i - self.policy.action_bias) / self.policy.action_scale)
                                 - action_mean) / action_std
@@ -190,18 +190,15 @@ class SVG(object):
                     re_reward = None
                     re_next_s = model_mean + xi * model_std
                 if i == 0:
-                    cum_rew = re_reward
-                    #cum_rew = re_reward - self.alpha * log_action
+                    cum_rew = re_reward - self.alpha * log_action
                 elif i < rollout_horizon - 1:
-                    cum_rew += self.gamma ** i * (re_reward)
-            #        cum_rew += self.gamma ** i * (re_reward - self.alpha * log_action)
+                    cum_rew = cum_rew + self.gamma ** i * (re_reward - self.alpha * log_action)
                 if i == rollout_horizon - 1:
                     last_a, log_last_a, _ = self.policy.sample(re_next_s)
-                    with eval_mode(self.critic):
-                        qf1_pi, qf2_pi = self.critic(re_next_s, last_a)
+                    #with eval_mode(self.critic):
+                    qf1_pi, qf2_pi = self.critic(re_next_s, last_a)
                     min_qf_pi = torch.min(qf1_pi, qf2_pi)
-                    cum_rew += self.gamma ** rollout_horizon * (min_qf_pi)
-#                    cum_rew += self.gamma ** rollout_horizon * (min_qf_pi - self.alpha * log_last_a)
+                    cum_rew = cum_rew + self.gamma ** rollout_horizon * (min_qf_pi - self.alpha * log_last_a)
                 re_state = re_next_s
             policy_loss = -(cum_rew/rollout_horizon).mean()
         self.policy_optim.zero_grad()
