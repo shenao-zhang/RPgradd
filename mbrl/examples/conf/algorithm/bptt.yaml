@@ -7,7 +7,7 @@ target_is_delta: true
 learned_rewards: true
 freq_train_model: ${overrides.freq_train_model}
 real_data_ratio: 1  # 0.8
-mf_ratio: 0.1
+mf_ratio: 0.0
 
 sac_samples_action: true
 initial_exploration_steps: 5000

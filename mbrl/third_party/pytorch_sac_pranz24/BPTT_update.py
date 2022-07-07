@@ -139,8 +139,8 @@ class BPTT(object):
         self.critic_optim.zero_grad()
         qf_loss.backward()
         self.critic_optim.step()
-        pi, log_pi, _ = self.policy.sample(state_batch)
         if mf_update:
+            pi, log_pi, _ = self.policy.sample(state_batch)
             qf1_pi, qf2_pi = self.critic(state_batch, pi)
             min_qf_pi = torch.min(qf1_pi, qf2_pi)
             policy_loss = (
@@ -154,7 +154,7 @@ class BPTT(object):
             )
             accum_dones = torch.zeros(obs_batch.shape[0], dtype=bool)
             accum_dones = accum_dones.to(self.device)
-            rollout_horizon = 4
+            rollout_horizon = 3
             for i in range(rollout_horizon):
                 if self.device == "cpu":
                     obs_batch = torch.FloatTensor(obs_batch)
@@ -177,15 +177,18 @@ class BPTT(object):
                     cum_rew += self.gamma ** rollout_horizon * (min_qf_pi * (~accum_dones))
                 """
                 if i == 0:
+                    log_pi = log_action
                     cum_rew = pred_rewards * (~accum_dones) - self.alpha * log_action
                 elif i < rollout_horizon - 1:
                     cum_rew = cum_rew + self.gamma ** i * (pred_rewards * (~accum_dones) - self.alpha * log_action)
+
                 if i == rollout_horizon - 1:
                     last_a, log_last_a, _ = self.policy.sample(pred_next_obs)
             #        with eval_mode(self.critic):
                     qf1_pi, qf2_pi = self.critic(pred_next_obs, last_a)
                     min_qf_pi = torch.min(qf1_pi, qf2_pi)
                     cum_rew = cum_rew + self.gamma ** rollout_horizon * (min_qf_pi * (~accum_dones) - self.alpha * log_last_a)
+
                 obs_batch = pred_next_obs
                 accum_dones |= pred_dones.squeeze()
             policy_loss = -(cum_rew/rollout_horizon).mean()
