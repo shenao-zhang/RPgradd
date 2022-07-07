@@ -38,6 +38,8 @@ class EnsembleLinearLayer(nn.Module):
         self.num_members = num_members
         self.in_size = in_size
         self.out_size = out_size
+        self.linear_layer = nn.Linear(self.in_size, self.out_size)
+        """
         self.weight = nn.Parameter(
             torch.rand(self.num_members, self.in_size, self.out_size)
         )
@@ -46,7 +48,7 @@ class EnsembleLinearLayer(nn.Module):
             self.use_bias = True
         else:
             self.use_bias = False
-
+        """
         self.elite_models: List[int] = None
         self.use_only_elite = False
 
@@ -58,11 +60,17 @@ class EnsembleLinearLayer(nn.Module):
             else:
                 return xw
         else:
-            xw = x.matmul(self.weight)
+            xw = self.linear_layer(x)
+            if xw.dim == 2:
+                xw = torch.unsqueeze(xw, 0)
+#            xw = x.matmul(self.weight)
+            return xw
+            """
             if self.use_bias:
                 return xw + self.bias
             else:
                 return xw
+            """
 
     def extra_repr(self) -> str:
         return (
